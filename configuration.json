@@ -1,0 +1,5 @@
+{
+    "publicKeyLocation" : "your_pubkey_location_here",
+    "privateKeyLocation" : "your_privkey_location_here",
+    "reposLocation" : "your_repos_location_here"
+}

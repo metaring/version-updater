@@ -1,0 +1,23 @@
+{
+  "name": "version-updater",
+  "version": "1.0.0",
+  "description": "MetaRing Ecosystem Version Updater",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "metaring",
+    "maven",
+    "git"
+  ],
+  "author": "Hayk Hovhannisyan",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "linq": "^3.2.0",
+    "maven": "^4.5.0",
+    "nodegit": "^0.24.3",
+    "rimraf": "^2.6.3",
+    "xml2js": "^0.4.19"
+  }
+}
