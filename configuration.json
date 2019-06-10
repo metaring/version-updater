@@ -1,5 +1,16 @@
 {
     "publicKeyLocation" : "your_pubkey_location_here",
     "privateKeyLocation" : "your_privkey_location_here",
-    "reposLocation" : "your_repos_location_here"
+    "reposLocation" : "your_repos_location_here",
+    "authorName": "MetaRing Repo Bot",
+    "authorEmail": "bot@metaring.com",
+    "encoding": "UTF-8",
+    "branchName": "master",
+    "originBranchName": "origin/master",
+    "branchReferenceName" : "refs/heads/master:refs/heads/master",
+    "tagReferenceName" : "refs/tags/",
+    "fileToStageName" : "pom.xml",
+    "commitMessage": "[RELEASE]",
+    "pushMessage": "[BOT] New Versions",
+    "directoriesToExclude": []
 }

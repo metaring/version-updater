@@ -14,16 +14,25 @@
  *    limitations under the License.
  */
 
-// Require in NodeGit, since we want to use the local copy, we're using a
-// relative path.  In your project, you will use:
-// var git = require("../../../");
+var force = false;
+process.argv.forEach(it => it === '--force' && (force = true));
+
+var fetch = false;
+process.argv.forEach(it => it === '--fetch' && (fetch = true));
+
 const fs = require("fs"),
-    rimraf = require("rimraf"),
     git = require("nodegit"),
     maven = require("maven"),
     xml2js = require('xml2js'),
     Enumerable = require('linq'),
     configuration = require('./configuration');
+
+var directoriesToExclude = configuration.directoriesToExclude || [];
+for(var i = 0; i < directoriesToExclude.length; i++) {
+    directoriesToExclude[i] = directoriesToExclude[i].trim().toLowerCase().split('\\').join('/');
+}
+
+var thisDir = __dirname.toLowerCase().split('\\').join('/');
 
 // Ensure that the `tmp` directory is local to this file and not the CWD.
 var localPath = configuration.reposLocation.split('\\').join('/');
@@ -32,115 +41,138 @@ console.log("Project local path is: %s", localPath);
 
 const pomVersionParser = new xml2js.Parser({ attrkey: "version" });
 
-// Public/private keys local path's
-const publicKey = fs.readFileSync(configuration.publicKeyLocation, 'utf-8'),
-    privateKey = fs.readFileSync(configuration.privateKeyLocation, 'utf-8');
-
-// Simple object to store clone options.
-// fetchOpts is a required callback for OS X machines.  There is a known issue
-// with libgit2 being able to verify certificates from GitHub.
-var options = {
-    fetchOpts: {
-        callbacks: {
-            credentials: function (url, userName) {
-                console.log('Credentials url: %s, userName: %s', url, userName);
-                // for private repository using ssh key which is added in github settings
-                // return git.Cred.sshKeyFromAgent(userName);
-                return git.Cred.sshKeyMemoryNew(userName, publicKey, privateKey, "");
-            },
-            certificateCheck: function () {
-                console.log('Certificate checking in repo: %s', cloneURL);
-                return 0;
-            }
+var fetchOptions = {
+    callbacks: {
+        certificateCheck() {
+            return 1;
+        },
+        credentials(url, userName) {
+            console.log('Url: %s, User Name: %s', url, userName);
+            return git.Cred.sshKeyNew(userName, configuration.publicKeyLocation, configuration.privateKeyLocation, configuration.privateKeyPassphrase || "");
+        },
+        transferProgress(info) {
+            return console.log("Transfering ....... " + info.receivedObjects() + ' / ' + info.totalObjects());
         }
     }
 };
 
+const author = git.Signature.now(configuration.authorName, configuration.authorEmail);
+
 /***
- * Main business functionality
- * 
- * 1. Get all maven repos in localPath (containing pom.xml file and .git folder), saving the pom version file
- * 
- * 2. For each repo, check last commit message includes a change on the version tag in the pom message
- *    1.1. yes
- *       a. run maven compile to do changes in pom.xml dependency library
- *       b. git commit changes in pom.xml 
- *       c. git push changes into repository
- *    1.2. no
- *       a. exit from programm .....
+ * Main functionality
  */
 async function main() {
-    var mavenRepos = await getMavenRepos(); Enumerable.from(mavenRepos);
-    var poms = Enumerable.from(mavenRepos).where(it => it.maven).toArray();
-    var repos = Enumerable.from(mavenRepos).where(it => it.repo).toArray();
-    await fetchAndCompile(repos, poms);
+    force && console.log("==== FORCE MODE ===");
+    fetch && console.log("==== FETCH MODE ===");
+    await fetchAndUpdate(await getMavenRepos());
+    console.log("Maven repo sync end. Bye!");
+    process.exit(0);
 }
 
-async function fetchAndCompile(repos, poms) {
+async function fetchAndUpdate(repos) {
+    var repos = Enumerable.from(repos).orderBy(it => it.path).toArray();
+    var updatedRepos = [];
     for (var i in repos) {
         var repo = repos[i];
         try {
-            var repository = await git.Repository.open(repo.path);
-            //TODO repo Fetch
-            //TODO repo Pull
-            if (repo.maven && repo.oldVersion !== (await getPOMVersion(repo.path))) {
-                for(var z in poms) {
-                    var pom = poms[z];
-                    //await mavenCompileTask(lP);
-                    //TODO maven compile #1
-                    //TODO maven compile #1
-                
-                    //TODO maven release:clean
-                    //TODO maven release:prepare
-                    //TODO maven release:perform
-                    console.log('Changes commited and pushed into repository');
-                    console.log('Doneeeeeeeeeeeeeeeeeeeeeeeeeee !!!!!!!!!!!!!!');
-                }
+            var repository = repo.lastCommitDate ? (await git.Repository.open(repo.path)) : undefined;
+            await pullAllChanges(repository, repo);
+            if (force || (await mustBeUpdated(repository, repo))) {
+                !force && console.log("Performing release for " + repo.name);
+                repo.pom = await performRelease(repository, repo);
             }
-        } catch (error) {
-            console.log('Error !!!!!!!!!!!!!!', error);
+        } catch (e) {
+            console.error(e);
         }
     }
+    return updatedRepos;
 }
 
 function getMavenRepos(currentPath) {
     !currentPath && (currentPath = localPath);
     !currentPath.endsWith('/') && (currentPath += '/');
     return new Promise(function (ok, ko) {
-        var mavenRepos = [];
         fs.readdir(currentPath, async function (err, items) {
             if (err) {
                 ko(err);
                 return;
             }
+            var mavenRepos = [];
             for (var i = 0; i < items.length; i++) {
                 var path = currentPath + items[i];
-                if (!fs.lstatSync(path).isDirectory() || path.endsWith('/target') || items[i].startsWith('.')) {
+                if (items[i].indexOf('.') === 0 || !fs.lstatSync(path).isDirectory() || path.toLowerCase().indexOf(thisDir) !== -1 || path.endsWith('target') || path.endsWith('node_modules') || pathMatchesDirectoryToExclude(path)) {
                     continue;
                 }
                 !path.endsWith('/') && (path += '/');
-                var maven = fs.existsSync(path + 'pom.xml');
-                var oldPom = fs.readFileSync(path + 'pom.xml', 'utf-8');
-                var oldVersion = !maven ? undefined : await getPOMVersion(path);
-                var repo = fs.existsSync(path + '.git/');
-                (maven || repo) && mavenRepos.push({
-                    path,
-                    maven,
-                    oldPom,
-                    oldVersion,
-                    repo
-                });
-                (await getMavenRepos(path)).map(item => mavenRepos.push(item));
+                var hasPom = fs.existsSync(path + configuration.fileToStageName);
+                var hasGit = fs.existsSync(path + '.git/');
+                hasGit && await printGitCloneCommand(path);
+                if(hasPom || hasGit) {
+                    mavenRepos.push({
+                        path,
+                        pom: hasPom && fs.readFileSync(path + configuration.fileToStageName, configuration.encoding),
+                        lastCommitDate: hasGit && await getLastCommitDate(path),
+                        name: hasPom ? await getProjectName(path) : path
+                    });
+                }
+                (await getMavenRepos(path)).map(item => item && mavenRepos.push(item));
             }
             ok(mavenRepos);
         });
     });
 }
 
+async function printGitCloneCommand(path) {
+    var repository = await git.Repository.open(path);
+    var config = await repository.config();
+    var buf = await config.getStringBuf("remote.origin.url");
+    var url = buf.toString();
+    var relativePath = '"' + path.split(localPath).join('').trim() + '"';
+    console.log("git clone " + url + " " + relativePath);
+}
+
+function pathMatchesDirectoryToExclude(p) {
+    var path = p.trim().toLowerCase().split('\\').join('/');
+    for(var i in directoriesToExclude) {
+        if(path.indexOf(directoriesToExclude[i]) !== -1) {
+            return true;
+        }
+    }
+    return false;
+}
+
+async function mustBeUpdated(repository, repoData) {
+    if(repository) {
+        var mustBeUpdated = false;
+        var walker = git.Revwalk.create(repository);
+        walker.pushHead();
+        await walker.getCommitsUntil(commit => {
+            if (commit.date().getTime() > repoData.lastCommitDate && commit.message().indexOf(configuration.commitMessage) !== -1) {
+                mustBeUpdated = true;
+            }
+            return true;
+        });
+        if(mustBeUpdated) {
+            return true;
+        }
+    }
+    if(repoData.pom && repoData.pom !== fs.readFileSync(repoData.path + configuration.fileToStageName, configuration.encoding)) {
+        return true;
+    }
+    return false;
+}
+
+async function getLastCommitDate(repo) {
+    var repository = typeof repo !== 'string' ? repo : (await git.Repository.open(repo));
+    var head = await git.Reference.nameToId(repository, 'HEAD');
+    var lastCommit = await repository.getCommit(head);
+    return lastCommit.date().getTime();
+}
+
 function getPOMVersion(path) {
     !path.endsWith('/') && (path += '/');
     return new Promise(function (ok, ko) {
-        pomVersionParser.parseString(fs.readFileSync(path + 'pom.xml', 'utf-8'), function (error, pom) {
+        pomVersionParser.parseString(fs.readFileSync(path + configuration.fileToStageName, configuration.encoding), function (error, pom) {
             if (error) {
                 ko(error);
                 return;
@@ -150,103 +182,124 @@ function getPOMVersion(path) {
     });
 }
 
-/***
- * Runs maven compile task to update pom.xml frameworks with new SNAPSHOT version
- */
-async function mavenCompileTask(repository) {
-    console.log("Maven Compilation running ... %s", repository);
-    const mvn = maven.create({
-        cwd: repository
+function getProjectName(path) {
+    !path.endsWith('/') && (path += '/');
+    return new Promise(function (ok, ko) {
+        pomVersionParser.parseString(fs.readFileSync(path + configuration.fileToStageName, configuration.encoding), function (error, pom) {
+            if (error) {
+                ko(error);
+                return;
+            }
+            ok(pom.project.groupId[pom.project.groupId.length - 1] + "." + pom.project.artifactId[pom.project.artifactId.length - 1]);
+        });
     });
-    await mvn.execute(['compile'], { 'skipTests': true })
-        .then(() => {
-            // As mvn.execute(..) returns a promise, you can use this block to continue
-            // your stuff, once the execution of the command has been finished successfully.
-            console.log("Maven Compilation succesfuly done ... %s ");
-        })
-        .catch(error => console.log("Some compilation errors happened Huston %s", error));
 }
 
-/***
- * Step commit and push: Commit and push pom.xml changes back to the repository
- */
-async function commitConfigurationChanges(localFolder) {
-    // TODO not working yet correctely
-    var fileToStage = 'pom.xml';
-
-    var repo, index, oid, remote;
-
-    git.Repository.open(localPath)
-        .then(function (repoResult) {
-            console.log('Open Index ....', localFolder.openIndex())
-            repo = repoResult;
-            return repoResult.openIndex();
-        })
-        .then(function (indexResult) {
-            console.log('Index Result ....', indexResult)
-            index = indexResult;
-
-            // this file is in the root of the directory and doesn't need a full path
-            index.addByPath(fileToStage);
-
-            // this will write files to the index
-            index.write();
-
-            return index.writeTree();
-        })
-        .then(function (oidResult) {
-            oid = oidResult;
-
-            return git.Reference.nameToId(repo, 'HEAD');
-        })
-        .then(function (head) {
-            return repo.getCommit(head);
-        })
-        .then(function (parent) {
-            author = git.Signature.now('Author Name', 'haik.hovhannisyan@email.com');
-            committer = git.Signature.now('Commiter Name', 'haik.hovhannisyan@email.com');
-
-            return repo.createCommit('HEAD', author, committer, 'Added the Readme file for theme builder', oid, [parent]);
-        })
-        .then(function (commitId) {
-            return console.log('New Commit: ', commitId);
-        })
-
-        /// PUSH
-        .then(function () {
-            console.log('PUSH .........')
-            return repo.getRemote('origin');
-        })
-        .then(function (remoteResult) {
-            console.log('remote Loaded');
-            remote = remoteResult;
-            remote.setCallbacks(options);
-            // remote.setCallbacks({
-            //     credentials: function(url, userName) {
-            //         return git.Cred.sshKeyFromAgent(userName);
-            //     }
-            // });
-            console.log('remote Configured');
-
-            return remote.connect(git.Enums.DIRECTION.PUSH);
-        })
-        .then(function () {
-            console.log('remote Connected?', remote.connected())
-
-            return remote.push(
-                ['refs/heads/master:refs/heads/master'],
-                null,
-                repo.defaultSignature(),
-                'Push to master'
-            )
-        })
-        .then(function () {
-            console.log('remote Pushed!')
-        })
-        .catch(function (reason) {
-            console.log(reason);
-        })
+async function performRelease(repository, repo) {
+    if(!repo.pom) {
+        return;
+    }
+    (!fetch && repository) && (await commit(repository, configuration.fileToStageName));
+    if(!fetch && repo.pom.indexOf('ossrh') !== -1) {
+        var prepareTaskVersions = await getVersionsForPrepareTask(repo.path);
+        await executeMaven(repo.path, 'release:clean');
+        await executeMaven(repo.path, 'release:prepare', prepareTaskVersions);
+        await executeMaven(repo.path, 'release:perform');
+    } else {
+        await executeMaven(repo.path, 'install');
+    }
+    (!fetch && repository) && (await pushAllChanges(repository, prepareTaskVersions.tag));
+    return fs.readFileSync(repo.path + configuration.fileToStageName, configuration.encoding);
 }
 
+async function executeMaven(repository, task, prepareTaskVersions) {
+    try {
+        const mvn = maven.create({ cwd: repository, quiet: true });
+        var parameters = {
+            skipTests: true
+        };
+        prepareTaskVersions && Object.keys(prepareTaskVersions).map(key => parameters[key] = prepareTaskVersions[key]);
+        console.log("Running Maven %s task for %s", task, repository);
+        await mvn.execute([task], parameters);
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+function checkAndIncrementVersions(version, toCheck, toIncrement, inc) {
+    if (version[toCheck] > 9) {
+        version[toCheck] = inc && inc > 0 ? inc - 1 : 0;
+        version[toIncrement] += 1;
+    }
+    return version;
+}
+
+async function getVersionsForPrepareTask(path) {
+    var inc = force ? 2 : 0;
+    var oldVersion = await getPOMVersion(path);
+    var releaseVersion = oldVersion.split('-SNAPSHOT').join('').split('-RELEASE').join();
+    var version = releaseVersion.split('.');
+    version[0] = parseInt(version[0]);
+    version[1] = parseInt(version[1]);
+    version[2] = parseInt(version[2]) + (inc + 1);
+    version = checkAndIncrementVersions(version, 2, 1, inc);
+    version = checkAndIncrementVersions(version, 1, 0, 0);
+
+    if(force) {
+        releaseVersion = version[0] + '.' + version[1] + '.' + version[2];
+        version[2] = parseInt(version[2]) + 1;
+        version = checkAndIncrementVersions(version, 2, 1);
+        version = checkAndIncrementVersions(version, 1, 0);
+    }
+
+    var tag = 'v' + releaseVersion;
+    var developmentVersion = version[0] + '.' + version[1] + '.' + version[2] + '-SNAPSHOT';
+    return {
+        releaseVersion,
+        tag,
+        developmentVersion
+    };
+}
+
+async function pullAllChanges(repository, repo) {
+    if(repository) {
+        try {
+            await git.Reset.reset(repository, await repository.getHeadCommit(), git.Reset.TYPE.HARD);
+            await repository.fetchAll(fetchOptions);
+            await repository.mergeBranches(configuration.branchName, configuration.originBranchName);
+            await git.Reset.reset(repository, await repository.getHeadCommit(), git.Reset.TYPE.HARD);
+        } catch (e) {
+            console.error(e);
+        }
+    }
+    if(repo.pom) {
+        await executeMaven(repo.path, 'versions:use-next-releases');
+    }
+}
+
+async function commit(repository, fileToStage) {
+    console.log("Committing file " + fileToStage + " for repository.");
+    try {
+        var openIndex = await repository.refreshIndex();
+        await openIndex.addByPath(fileToStage);
+        await openIndex.write();
+        var oid = await openIndex.writeTree();
+        var head = await git.Reference.nameToId(repository, 'HEAD');
+        var parent = await repository.getCommit(head);
+        await repository.createCommit('HEAD', author, author, configuration.pushMessage, oid, [parent]);
+    } catch (e) {
+        console.error(e);
+    }
+}
+
+async function pushAllChanges(repository, tagVersion) {
+    console.log("Pushing the new tag release " + tagVersion + " for repository " + repository);
+    try {
+        var remoteResult = await repository.getRemote('origin');
+        await remoteResult.push([configuration.branchReferenceName, configuration.tagReferenceName + tagVersion], fetchOptions);
+    } catch (e) {
+        console.error(e);
+    }
+}
 // ---------------------------- MAIN -----------------------------//
 main().catch(console.error);

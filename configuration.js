@@ -4,7 +4,7 @@ var configurationLocal = {};
 
 try {
     configurationLocal = require('./configuration.local.json');
-} catch{
+} catch(e) {
 }
 
 Object.keys(configurationLocal).map(it => configuration[it] = configurationLocal[it]);
