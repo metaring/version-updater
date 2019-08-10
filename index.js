@@ -78,7 +78,7 @@ async function fetchAndUpdate(repos) {
             var repository = repo.lastCommitDate ? (await git.Repository.open(repo.path)) : undefined;
             await pullAllChanges(repository, repo);
             if (force || (await mustBeUpdated(repository, repo))) {
-                !force && console.log("Performing release for " + repo.name);
+                !force && !fetch && console.log("Performing release for " + repo.name);
                 repo.pom = await performRelease(repository, repo);
             }
         } catch (e) {
@@ -202,13 +202,14 @@ async function performRelease(repository, repo) {
     (!fetch && repository) && (await commit(repository, configuration.fileToStageName));
     if(!fetch && repo.pom.indexOf('ossrh') !== -1) {
         var prepareTaskVersions = await getVersionsForPrepareTask(repo.path);
+        console.log('Releae task versions for ' + repo.name + ': ' + JSON.stringify(prepareTaskVersions));
         await executeMaven(repo.path, 'release:clean');
         await executeMaven(repo.path, 'release:prepare', prepareTaskVersions);
         await executeMaven(repo.path, 'release:perform');
     } else {
         await executeMaven(repo.path, 'install');
     }
-    (!fetch && repository) && (await pushAllChanges(repository, prepareTaskVersions.tag));
+    (!fetch && repository) && (await pushAllChanges(repository, prepareTaskVersions.tag, repo));
     return fs.readFileSync(repo.path + configuration.fileToStageName, configuration.encoding);
 }
 
@@ -273,7 +274,7 @@ async function pullAllChanges(repository, repo) {
         }
     }
     if(repo.pom) {
-        await executeMaven(repo.path, 'versions:use-next-releases');
+        await executeMaven(repo.path, 'versions:use-latest-releases');
     }
 }
 
@@ -292,8 +293,8 @@ async function commit(repository, fileToStage) {
     }
 }
 
-async function pushAllChanges(repository, tagVersion) {
-    console.log("Pushing the new tag release " + tagVersion + " for repository " + repository);
+async function pushAllChanges(repository, tagVersion, repo) {
+    console.log("Pushing the new tag release " + tagVersion + " for repository " + repo.name);
     try {
         var remoteResult = await repository.getRemote('origin');
         await remoteResult.push([configuration.branchReferenceName, configuration.tagReferenceName + tagVersion], fetchOptions);
