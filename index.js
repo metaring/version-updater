@@ -34,7 +34,6 @@ for(var i = 0; i < directoriesToExclude.length; i++) {
 
 var thisDir = __dirname.toLowerCase().split('\\').join('/');
 
-// Ensure that the `tmp` directory is local to this file and not the CWD.
 var localPath = configuration.reposLocation.split('\\').join('/');
 !localPath.endsWith('/') && (localPath += '/');
 console.log("Project local path is: %s", localPath);
@@ -47,11 +46,7 @@ var fetchOptions = {
             return 1;
         },
         credentials(url, userName) {
-            console.log('Url: %s, User Name: %s', url, userName);
             return git.Cred.sshKeyNew(userName, configuration.publicKeyLocation, configuration.privateKeyLocation, configuration.privateKeyPassphrase || "");
-        },
-        transferProgress(info) {
-            return console.log("Transfering ....... " + info.receivedObjects() + ' / ' + info.totalObjects());
         }
     }
 };
@@ -71,21 +66,24 @@ async function main() {
 
 async function fetchAndUpdate(repos) {
     var repos = Enumerable.from(repos).orderBy(it => it.path).toArray();
+    repos && repos.length > 0 && console.log('\n');
     var updatedRepos = [];
     for (var i in repos) {
         var repo = repos[i];
+        console.log('==> ' + repo.name + ' START <==');
         try {
             var repository = repo.lastCommitDate ? (await git.Repository.open(repo.path)) : undefined;
-            console.log('POM Version ' + (await getPOMVersion(repo.path)) + ' for repo ' + repo.name);
+            var oldVersion = repo.pom ? await getPOMVersion(repo.path) : undefined;
             await pullAllChanges(repository, repo);
-            console.log('POM Version ' + (await getPOMVersion(repo.path)) + ' for repo ' + repo.name);
+            oldVersion && console.log('POM Versions: ' + oldVersion + ' -> ' + (await getPOMVersion(repo.path)));
             if (force || (await mustBeUpdated(repository, repo))) {
-                !force && !fetch && console.log("Performing release for " + repo.name);
+                !force && !fetch && console.log("CHANGES DETECTED Performing release");
                 repo.pom = await performRelease(repository, repo);
             }
         } catch (e) {
             console.log(e);
         }
+        console.log('==> ' + repo.name + ' END <==\n\n');
     }
     return updatedRepos;
 }
@@ -208,7 +206,7 @@ async function performRelease(repository, repo) {
     !fetch && repository && (await commit(repository, configuration.fileToStageName));
     if(!fetch && repo.pom.indexOf('ossrh') !== -1) {
         var prepareTaskVersions = await getVersionsForPrepareTask(repo.path);
-        console.log('Release task versions for ' + repo.name + ': ' + JSON.stringify(prepareTaskVersions));
+        console.log('Release task versions for: ' + JSON.stringify(prepareTaskVersions));
         await executeMaven(repo.path, 'release:clean');
         await executeMaven(repo.path, 'release:prepare', prepareTaskVersions);
         await executeMaven(repo.path, 'release:perform');
@@ -273,9 +271,7 @@ async function pullAllChanges(repository, repo) {
         try {
             await git.Reset.reset(repository, await repository.getHeadCommit(), git.Reset.TYPE.HARD);
             await repository.fetchAll(fetchOptions);
-            //await repository.mergeBranches(configuration.branchName, configuration.originBranchName);
             await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.HARD);
-            //await repository.mergeBranches(configuration.branchName, configuration.originBranchName);
         } catch (e) {
             console.log(e);
         }
@@ -311,5 +307,4 @@ async function pushAllChanges(repository, tagVersion, repo, force) {
         force !== true && await pushAllChanges(repository, tagVersion, repo, true);
     }
 }
-// ---------------------------- MAIN -----------------------------//
 main().catch(console.log);
