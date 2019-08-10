@@ -300,13 +300,15 @@ async function commit(repository, fileToStage) {
     }
 }
 
-async function pushAllChanges(repository, tagVersion, repo) {
+async function pushAllChanges(repository, tagVersion, repo, force) {
     console.log("Pushing the new tag release " + tagVersion + " for repository " + repo.name);
     try {
         var remoteResult = await repository.getRemote('origin');
-        await remoteResult.push([configuration.branchReferenceName, configuration.tagReferenceName + tagVersion], fetchOptions);
+        await remoteResult.push([(force === true ? '+' : '') + configuration.branchReferenceName, (force === true ? '+' : '') + configuration.tagReferenceName + tagVersion], fetchOptions);
     } catch (e) {
-        console.log(e);
+        force !== true && console.log('Push failed, trying again in force mode...');
+        force === true && console.log(e);
+        force !== true && await pushAllChanges(repository, tagVersion, repo, true);
     }
 }
 // ---------------------------- MAIN -----------------------------//
