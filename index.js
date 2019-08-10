@@ -76,13 +76,15 @@ async function fetchAndUpdate(repos) {
         var repo = repos[i];
         try {
             var repository = repo.lastCommitDate ? (await git.Repository.open(repo.path)) : undefined;
+            console.log('POM Version ' + (await getPOMVersion(repo.path)) + ' for repo ' + repo.name);
             await pullAllChanges(repository, repo);
+            console.log('POM Version ' + (await getPOMVersion(repo.path)) + ' for repo ' + repo.name);
             if (force || (await mustBeUpdated(repository, repo))) {
                 !force && !fetch && console.log("Performing release for " + repo.name);
                 repo.pom = await performRelease(repository, repo);
             }
         } catch (e) {
-            console.error(e);
+            console.log(e);
         }
     }
     return updatedRepos;
@@ -114,6 +116,10 @@ function getMavenRepos(currentPath) {
                         lastCommitDate: hasGit && await getLastCommitDate(path),
                         name: hasPom ? await getProjectName(path) : path
                     });
+                    try {
+                        fs.unlinkSync(path + configuration.fileToStageName + '.versionsBackup');
+                    } catch(e) {
+                    }
                 }
                 (await getMavenRepos(path)).map(item => item && mavenRepos.push(item));
             }
@@ -199,10 +205,10 @@ async function performRelease(repository, repo) {
     if(!repo.pom) {
         return;
     }
-    (!fetch && repository) && (await commit(repository, configuration.fileToStageName));
+    !fetch && repository && (await commit(repository, configuration.fileToStageName));
     if(!fetch && repo.pom.indexOf('ossrh') !== -1) {
         var prepareTaskVersions = await getVersionsForPrepareTask(repo.path);
-        console.log('Releae task versions for ' + repo.name + ': ' + JSON.stringify(prepareTaskVersions));
+        console.log('Release task versions for ' + repo.name + ': ' + JSON.stringify(prepareTaskVersions));
         await executeMaven(repo.path, 'release:clean');
         await executeMaven(repo.path, 'release:prepare', prepareTaskVersions);
         await executeMaven(repo.path, 'release:perform');
@@ -223,7 +229,7 @@ async function executeMaven(repository, task, prepareTaskVersions) {
         console.log("Running Maven %s task for %s", task, repository);
         await mvn.execute([task], parameters);
     } catch (e) {
-        console.error(e);
+        console.log(e);
     }
 }
 
@@ -267,10 +273,11 @@ async function pullAllChanges(repository, repo) {
         try {
             await git.Reset.reset(repository, await repository.getHeadCommit(), git.Reset.TYPE.HARD);
             await repository.fetchAll(fetchOptions);
-            await repository.mergeBranches(configuration.branchName, configuration.originBranchName);
-            await git.Reset.reset(repository, await repository.getHeadCommit(), git.Reset.TYPE.HARD);
+            //await repository.mergeBranches(configuration.branchName, configuration.originBranchName);
+            await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.HARD);
+            //await repository.mergeBranches(configuration.branchName, configuration.originBranchName);
         } catch (e) {
-            console.error(e);
+            console.log(e);
         }
     }
     if(repo.pom) {
@@ -289,7 +296,7 @@ async function commit(repository, fileToStage) {
         var parent = await repository.getCommit(head);
         await repository.createCommit('HEAD', author, author, configuration.pushMessage, oid, [parent]);
     } catch (e) {
-        console.error(e);
+        console.log(e);
     }
 }
 
@@ -299,8 +306,8 @@ async function pushAllChanges(repository, tagVersion, repo) {
         var remoteResult = await repository.getRemote('origin');
         await remoteResult.push([configuration.branchReferenceName, configuration.tagReferenceName + tagVersion], fetchOptions);
     } catch (e) {
-        console.error(e);
+        console.log(e);
     }
 }
 // ---------------------------- MAIN -----------------------------//
-main().catch(console.error);
+main().catch(console.log);
