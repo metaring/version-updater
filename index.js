@@ -277,6 +277,7 @@ async function pullAllChanges(repository, repo) {
         }
     }
     if(repo.pom) {
+        await executeMaven(repo.path, 'versions:use-releases');
         await executeMaven(repo.path, 'versions:use-latest-releases');
     }
 }
