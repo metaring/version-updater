@@ -28,7 +28,7 @@ const fs = require("fs"),
     configuration = require('./configuration');
 
 var directoriesToExclude = configuration.directoriesToExclude || [];
-for(var i = 0; i < directoriesToExclude.length; i++) {
+for (var i = 0; i < directoriesToExclude.length; i++) {
     directoriesToExclude[i] = directoriesToExclude[i].trim().toLowerCase().split('\\').join('/');
 }
 
@@ -71,8 +71,9 @@ async function fetchAndUpdate(repos) {
     for (var i in repos) {
         var repo = repos[i];
         console.log('==> ' + repo.name + ' START <==');
+        var repository = null;
         try {
-            var repository = repo.lastCommitDate ? (await git.Repository.open(repo.path)) : undefined;
+            repository = repo.lastCommitDate ? (await git.Repository.open(repo.path)) : undefined;
             var oldVersion = repo.pom ? await getPOMVersion(repo.path) : undefined;
             await pullAllChanges(repository, repo);
             oldVersion && console.log('POM Versions: ' + oldVersion + ' -> ' + (await getPOMVersion(repo.path)));
@@ -82,6 +83,13 @@ async function fetchAndUpdate(repos) {
             }
         } catch (e) {
             console.log(e);
+            console.log('Resetting repo');
+            try {
+                await resetRepo(repository);
+            } catch(e1) {
+                console.log("ERROR while resetting repo");
+                console.log(e1);
+            }
         }
         console.log('==> ' + repo.name + ' END <==\n\n');
     }
@@ -91,8 +99,8 @@ async function fetchAndUpdate(repos) {
 function getMavenRepos(currentPath) {
     !currentPath && (currentPath = localPath);
     !currentPath.endsWith('/') && (currentPath += '/');
-    return new Promise(function (ok, ko) {
-        fs.readdir(currentPath, async function (err, items) {
+    return new Promise(function(ok, ko) {
+        fs.readdir(currentPath, async function(err, items) {
             if (err) {
                 ko(err);
                 return;
@@ -107,7 +115,7 @@ function getMavenRepos(currentPath) {
                 var hasPom = fs.existsSync(path + configuration.fileToStageName);
                 var hasGit = fs.existsSync(path + '.git/');
                 hasGit && await printGitCloneCommand(path);
-                if(hasPom || hasGit) {
+                if (hasPom || hasGit) {
                     mavenRepos.push({
                         path,
                         pom: hasPom && fs.readFileSync(path + configuration.fileToStageName, configuration.encoding),
@@ -116,8 +124,7 @@ function getMavenRepos(currentPath) {
                     });
                     try {
                         fs.unlinkSync(path + configuration.fileToStageName + '.versionsBackup');
-                    } catch(e) {
-                    }
+                    } catch (e) {}
                 }
                 (await getMavenRepos(path)).map(item => item && mavenRepos.push(item));
             }
@@ -137,8 +144,8 @@ async function printGitCloneCommand(path) {
 
 function pathMatchesDirectoryToExclude(p) {
     var path = p.trim().toLowerCase().split('\\').join('/');
-    for(var i in directoriesToExclude) {
-        if(path.indexOf(directoriesToExclude[i]) !== -1) {
+    for (var i in directoriesToExclude) {
+        if (path.indexOf(directoriesToExclude[i]) !== -1) {
             return true;
         }
     }
@@ -146,7 +153,7 @@ function pathMatchesDirectoryToExclude(p) {
 }
 
 async function mustBeUpdated(repository, repoData) {
-    if(repository) {
+    if (repository) {
         var mustBeUpdated = false;
         var walker = git.Revwalk.create(repository);
         walker.pushHead();
@@ -156,11 +163,11 @@ async function mustBeUpdated(repository, repoData) {
             }
             return true;
         });
-        if(mustBeUpdated) {
+        if (mustBeUpdated) {
             return true;
         }
     }
-    if(repoData.pom && repoData.pom !== fs.readFileSync(repoData.path + configuration.fileToStageName, configuration.encoding)) {
+    if (repoData.pom && repoData.pom !== fs.readFileSync(repoData.path + configuration.fileToStageName, configuration.encoding)) {
         return true;
     }
     return false;
@@ -175,8 +182,8 @@ async function getLastCommitDate(repo) {
 
 function getPOMVersion(path) {
     !path.endsWith('/') && (path += '/');
-    return new Promise(function (ok, ko) {
-        pomVersionParser.parseString(fs.readFileSync(path + configuration.fileToStageName, configuration.encoding), function (error, pom) {
+    return new Promise(function(ok, ko) {
+        pomVersionParser.parseString(fs.readFileSync(path + configuration.fileToStageName, configuration.encoding), function(error, pom) {
             if (error) {
                 ko(error);
                 return;
@@ -188,8 +195,8 @@ function getPOMVersion(path) {
 
 function getProjectName(path) {
     !path.endsWith('/') && (path += '/');
-    return new Promise(function (ok, ko) {
-        pomVersionParser.parseString(fs.readFileSync(path + configuration.fileToStageName, configuration.encoding), function (error, pom) {
+    return new Promise(function(ok, ko) {
+        pomVersionParser.parseString(fs.readFileSync(path + configuration.fileToStageName, configuration.encoding), function(error, pom) {
             if (error) {
                 ko(error);
                 return;
@@ -200,11 +207,10 @@ function getProjectName(path) {
 }
 
 async function performRelease(repository, repo) {
-    if(!repo.pom) {
+    if (!repo.pom) {
         return;
-    }
-    !fetch && repository && (await commit(repository, configuration.fileToStageName));
-    if(!fetch && repo.pom.indexOf('ossrh') !== -1) {
+    }!fetch && repository && (await commit(repository, configuration.fileToStageName));
+    if (!fetch && repo.pom.indexOf('ossrh') !== -1) {
         var prepareTaskVersions = await getVersionsForPrepareTask(repo.path);
         console.log('Release task versions for: ' + JSON.stringify(prepareTaskVersions));
         await executeMaven(repo.path, 'release:clean');
@@ -218,17 +224,13 @@ async function performRelease(repository, repo) {
 }
 
 async function executeMaven(repository, task, prepareTaskVersions) {
-    try {
-        const mvn = maven.create({ cwd: repository, quiet: true });
-        var parameters = {
-            skipTests: true
-        };
-        prepareTaskVersions && Object.keys(prepareTaskVersions).map(key => parameters[key] = prepareTaskVersions[key]);
-        console.log("Running Maven %s task for %s", task, repository);
-        await mvn.execute([task], parameters);
-    } catch (e) {
-        console.log(e);
-    }
+    const mvn = maven.create({ cwd: repository, quiet: true });
+    var parameters = {
+        skipTests: true
+    };
+    prepareTaskVersions && Object.keys(prepareTaskVersions).map(key => parameters[key] = prepareTaskVersions[key]);
+    console.log("Running Maven %s task for %s", task, repository);
+    await mvn.execute([task], parameters);
 }
 
 function checkAndIncrementVersions(version, toCheck, toIncrement, inc) {
@@ -250,7 +252,7 @@ async function getVersionsForPrepareTask(path) {
     version = checkAndIncrementVersions(version, 2, 1, inc);
     version = checkAndIncrementVersions(version, 1, 0, 0);
 
-    if(force) {
+    if (force) {
         releaseVersion = version[0] + '.' + version[1] + '.' + version[2];
         version[2] = parseInt(version[2]) + 1;
         version = checkAndIncrementVersions(version, 2, 1);
@@ -266,17 +268,18 @@ async function getVersionsForPrepareTask(path) {
     };
 }
 
-async function pullAllChanges(repository, repo) {
-    if(repository) {
-        try {
-            await git.Reset.reset(repository, await repository.getHeadCommit(), git.Reset.TYPE.HARD);
-            await repository.fetchAll(fetchOptions);
-            await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.HARD);
-        } catch (e) {
-            console.log(e);
-        }
+async function resetRepo(repository) {
+    if (!repository) {
+        return;
     }
-    if(repo.pom) {
+    await git.Reset.reset(repository, await repository.getHeadCommit(), git.Reset.TYPE.HARD);
+    await repository.fetchAll(fetchOptions);
+    await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.HARD);
+}
+
+async function pullAllChanges(repository, repo) {
+    await resetRepo(repository);
+    if (repo.pom) {
         await executeMaven(repo.path, 'versions:use-releases');
         await executeMaven(repo.path, 'versions:use-latest-releases');
     }
@@ -284,17 +287,13 @@ async function pullAllChanges(repository, repo) {
 
 async function commit(repository, fileToStage) {
     console.log("Committing file " + fileToStage + " for repository.");
-    try {
-        var openIndex = await repository.refreshIndex();
-        await openIndex.addByPath(fileToStage);
-        await openIndex.write();
-        var oid = await openIndex.writeTree();
-        var head = await git.Reference.nameToId(repository, 'HEAD');
-        var parent = await repository.getCommit(head);
-        await repository.createCommit('HEAD', author, author, configuration.pushMessage, oid, [parent]);
-    } catch (e) {
-        console.log(e);
-    }
+    var openIndex = await repository.refreshIndex();
+    await openIndex.addByPath(fileToStage);
+    await openIndex.write();
+    var oid = await openIndex.writeTree();
+    var head = await git.Reference.nameToId(repository, 'HEAD');
+    var parent = await repository.getCommit(head);
+    await repository.createCommit('HEAD', author, author, configuration.pushMessage, oid, [parent]);
 }
 
 async function pushAllChanges(repository, tagVersion, repo, force) {
