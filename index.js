@@ -48,7 +48,8 @@ var fetchOptions = {
         credentials(url, userName) {
             return git.Cred.sshKeyNew(userName, configuration.publicKeyLocation, configuration.privateKeyLocation, configuration.privateKeyPassphrase || "");
         }
-    }
+    },
+    downloadTags: git.Remote.AUTOTAG_OPTION.DOWNLOAD_TAGS_ALL
 };
 
 const author = git.Signature.now(configuration.authorName, configuration.authorEmail);
@@ -272,9 +273,11 @@ async function resetRepo(repository) {
     if (!repository) {
         return;
     }
+    (await git.Tag.list(repository)).map(async tag => await git.Tag.delete(repository, tag));
     await git.Reset.reset(repository, await repository.getHeadCommit(), git.Reset.TYPE.HARD);
     await repository.fetchAll(fetchOptions);
     await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.HARD);
+    (await git.Tag.list(repository)).map(async tag => await git.Tag.delete(repository, tag));
 }
 
 async function pullAllChanges(repository, repo) {
