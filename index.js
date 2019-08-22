@@ -212,7 +212,7 @@ async function performRelease(repository, repo) {
     if (!repo.pom) {
         return;
     }
-    !fetch && repository && (await commit(repository));
+    !fetch && repository && (await commitEdits(repository));
     if (!fetch && repo.pom.indexOf('ossrh') !== -1) {
         var prepareTaskVersions = await getVersionsForPrepareTask(repo.path);
         console.log('Release task versions for: ' + JSON.stringify(prepareTaskVersions));
@@ -298,8 +298,8 @@ async function getDiffFiles(repository) {
     return patches.map(patch => repository.referencingRepo.path + patch.newFile().path());
 }
 
-async function commit(repository) {
-    console.log("Committing repository.");
+async function commitEdits(repository) {
+    console.log("Committing edits in " + repository.referencingRepo.path);
     var openIndex = await repository.refreshIndex();
     (await getDiffFiles(repository)).map(async path => await openIndex.addByPath(path));
     await openIndex.write();
@@ -312,8 +312,8 @@ async function commit(repository) {
 async function pushAllChanges(repository, tagVersion, repo, forceMode) {
     console.log("Pushing the new tag release " + tagVersion + " for repository " + repo.name);
     await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.MIXED);
-    var commit = await commit(repository);
-    await git.Tag.create(repository, tagVersion, commit, author, configuration.pushMessage, 1);
+    var commitOid = await commitEdits(repository);
+    await git.Tag.create(repository, tagVersion, commitOid, author, configuration.pushMessage, 1);
     try {
         var remoteResult = await repository.getRemote('origin');
         await remoteResult.push([(forceMode === true ? '+' : '') + configuration.branchReferenceName, (force === true ? '+' : '') + configuration.tagReferenceName + tagVersion], fetchOptions);
