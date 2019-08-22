@@ -280,6 +280,7 @@ async function resetRepo(repository) {
     await repository.fetchAll(fetchOptions);
     await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.HARD);
     (await git.Tag.list(repository)).map(async tag => await git.Tag.delete(repository, tag));
+    repository.referencingRepo.lastCommit = await repository.getHeadCommit();
 }
 
 async function pullAllChanges(repository, repo) {
@@ -300,8 +301,16 @@ async function getDiffFiles(repository) {
 
 async function commitEdits(repository) {
     console.log("Committing edits in " + repository.referencingRepo.path);
+    var diffFiles = await getDiffFiles(repository);
+    if(!diffFiles || diffFiles.length === 0) {
+        console.log('No files to commit!');
+        return;
+    }
     var openIndex = await repository.refreshIndex();
-    (await getDiffFiles(repository)).map(async path => await openIndex.addByPath(path));
+    diffFiles.map(async path => {
+        console.log('Adding ' + path);
+        await openIndex.addByPath(path);
+    });
     await openIndex.write();
     var oid = await openIndex.writeTree();
     var head = await git.Reference.nameToId(repository, 'HEAD');
@@ -311,7 +320,7 @@ async function commitEdits(repository) {
 
 async function pushAllChanges(repository, tagVersion, repo, forceMode) {
     console.log("Pushing the new tag release " + tagVersion + " for repository " + repo.name);
-    await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.MIXED);
+    await git.Reset.reset(repository, repo.lastCommit, git.Reset.TYPE.MIXED);
     await commitEdits(repository);
     await git.Tag.create(repository, tagVersion, await repository.getHeadCommit(), author, configuration.pushMessage, 1);
     try {
