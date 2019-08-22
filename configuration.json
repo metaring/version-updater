@@ -11,6 +11,6 @@
     "tagReferenceName" : "refs/tags/",
     "fileToStageName" : "pom.xml",
     "commitMessage": "[RELEASE]",
-    "pushMessage": "[BOT] New Versions",
+    "pushMessage": "Published ",
     "directoriesToExclude": []
 }

@@ -299,7 +299,7 @@ async function getDiffFiles(repository) {
     return patches.map(patch => patch.newFile().path());
 }
 
-async function commitEdits(repository) {
+async function commitEdits(repository, tagVersion) {
     console.log("Committing edits in " + repository.referencingRepo.path);
     var diffFiles = await getDiffFiles(repository);
     if(!diffFiles || diffFiles.length === 0) {
@@ -315,14 +315,14 @@ async function commitEdits(repository) {
     var oid = await openIndex.writeTree();
     var head = await git.Reference.nameToId(repository, 'HEAD');
     var parent = await repository.getCommit(head);
-    return await repository.createCommit('HEAD', author, author, configuration.pushMessage, oid, [parent]);
+    return await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [parent]);
 }
 
 async function pushAllChanges(repository, tagVersion, repo, forceMode) {
     console.log("Pushing the new tag release " + tagVersion + " for repository " + repo.name);
     await git.Reset.reset(repository, repo.lastCommit, git.Reset.TYPE.MIXED);
-    await commitEdits(repository);
-    await git.Tag.create(repository, tagVersion, await repository.getHeadCommit(), author, configuration.pushMessage, 1);
+    await commitEdits(repository, tagVersion);
+    await git.Tag.create(repository, tagVersion, await repository.getHeadCommit(), author, configuration.pushMessage + tagVersion, 1);
     try {
         var remoteResult = await repository.getRemote('origin');
         await remoteResult.push([(forceMode === true ? '+' : '') + configuration.branchReferenceName, (force === true ? '+' : '') + configuration.tagReferenceName + tagVersion], fetchOptions);
