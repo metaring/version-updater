@@ -75,6 +75,7 @@ async function fetchAndUpdate(repos) {
         var repository = null;
         try {
             repository = repo.lastCommitDate ? (await git.Repository.open(repo.path)) : undefined;
+            repository && (repository.referencingRepo = repo);
             var oldVersion = repo.pom ? await getPOMVersion(repo.path) : undefined;
             await pullAllChanges(repository, repo);
             oldVersion && console.log('POM Versions: ' + oldVersion + ' -> ' + (await getPOMVersion(repo.path)));
@@ -210,7 +211,8 @@ function getProjectName(path) {
 async function performRelease(repository, repo) {
     if (!repo.pom) {
         return;
-    }!fetch && repository && (await commit(repository, configuration.fileToStageName));
+    }
+    !fetch && repository && (await commit(repository));
     if (!fetch && repo.pom.indexOf('ossrh') !== -1) {
         var prepareTaskVersions = await getVersionsForPrepareTask(repo.path);
         console.log('Release task versions for: ' + JSON.stringify(prepareTaskVersions));
@@ -288,26 +290,37 @@ async function pullAllChanges(repository, repo) {
     }
 }
 
-async function commit(repository, fileToStage) {
-    console.log("Committing file " + fileToStage + " for repository.");
+async function getDiffFiles(repository) {
+    const diff = await git.Diff.indexToWorkdir(repository, null, {
+        flags: git.Diff.OPTION.SHOW_UNTRACKED_CONTENT | git.Diff.OPTION.RECURSE_UNTRACKED_DIRS
+    });
+    const patches = await diff.patches();
+    return patches.map(patch => repository.referencingRepo.path + patch.newFile().path());
+}
+
+async function commit(repository) {
+    console.log("Committing repository.");
     var openIndex = await repository.refreshIndex();
-    await openIndex.addByPath(fileToStage);
+    (await getDiffFiles(repository)).map(async path => await openIndex.addByPath(path));
     await openIndex.write();
     var oid = await openIndex.writeTree();
     var head = await git.Reference.nameToId(repository, 'HEAD');
     var parent = await repository.getCommit(head);
-    await repository.createCommit('HEAD', author, author, configuration.pushMessage, oid, [parent]);
+    return await repository.createCommit('HEAD', author, author, configuration.pushMessage, oid, [parent]);
 }
 
-async function pushAllChanges(repository, tagVersion, repo, force) {
+async function pushAllChanges(repository, tagVersion, repo, forceMode) {
     console.log("Pushing the new tag release " + tagVersion + " for repository " + repo.name);
+    await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.MIXED);
+    var commit = await commit(repository);
+    await git.Tag.create(repository, tagVersion, commit, author, configuration.pushMessage, 1);
     try {
         var remoteResult = await repository.getRemote('origin');
-        await remoteResult.push([(force === true ? '+' : '') + configuration.branchReferenceName, (force === true ? '+' : '') + configuration.tagReferenceName + tagVersion], fetchOptions);
+        await remoteResult.push([(forceMode === true ? '+' : '') + configuration.branchReferenceName, (force === true ? '+' : '') + configuration.tagReferenceName + tagVersion], fetchOptions);
     } catch (e) {
-        force !== true && console.log('Push failed, trying again in force mode...');
-        force === true && console.log(e);
-        force !== true && await pushAllChanges(repository, tagVersion, repo, true);
+        forceMode !== true && console.log('Push failed, trying again in force mode...');
+        forceMode === true && console.log(e);
+        forceMode !== true && await pushAllChanges(repository, tagVersion, repo, true);
     }
 }
 main().catch(console.log);
