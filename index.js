@@ -313,9 +313,7 @@ async function commitEdits(repository, tagVersion) {
     });
     await openIndex.write();
     var oid = await openIndex.writeTree();
-    var head = await git.Reference.nameToId(repository, 'HEAD');
-    var parent = await repository.getCommit(head);
-    return await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [parent]);
+    return await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [repository.referencingRepo.lastCommit]);
 }
 
 async function pushAllChanges(repository, tagVersion, repo, forceMode) {
