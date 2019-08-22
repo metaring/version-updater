@@ -312,8 +312,8 @@ async function commitEdits(repository) {
 async function pushAllChanges(repository, tagVersion, repo, forceMode) {
     console.log("Pushing the new tag release " + tagVersion + " for repository " + repo.name);
     await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.MIXED);
-    var commitOid = await commitEdits(repository);
-    await git.Tag.create(repository, tagVersion, commitOid, author, configuration.pushMessage, 1);
+    await commitEdits(repository);
+    await git.Tag.create(repository, tagVersion, await repository.getHeadCommit(), author, configuration.pushMessage, 1);
     try {
         var remoteResult = await repository.getRemote('origin');
         await remoteResult.push([(forceMode === true ? '+' : '') + configuration.branchReferenceName, (force === true ? '+' : '') + configuration.tagReferenceName + tagVersion], fetchOptions);
