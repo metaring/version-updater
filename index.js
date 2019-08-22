@@ -295,7 +295,7 @@ async function getDiffFiles(repository) {
         flags: git.Diff.OPTION.SHOW_UNTRACKED_CONTENT | git.Diff.OPTION.RECURSE_UNTRACKED_DIRS
     });
     const patches = await diff.patches();
-    return patches.map(patch => repository.referencingRepo.path + patch.newFile().path());
+    return patches.map(patch => patch.newFile().path());
 }
 
 async function commitEdits(repository) {
