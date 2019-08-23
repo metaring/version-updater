@@ -26,6 +26,7 @@ const fs = require("fs"),
     xml2js = require('xml2js'),
     Enumerable = require('linq'),
     configuration = require('./configuration');
+exec = require('child_process').exec;
 
 var directoriesToExclude = configuration.directoriesToExclude || [];
 for (var i = 0; i < directoriesToExclude.length; i++) {
@@ -88,7 +89,7 @@ async function fetchAndUpdate(repos) {
             console.log('Resetting repo');
             try {
                 await resetRepo(repository);
-            } catch(e1) {
+            } catch (e1) {
                 console.log("ERROR while resetting repo");
                 console.log(e1);
             }
@@ -112,8 +113,7 @@ function getMavenRepos(currentPath) {
                 var path = currentPath + items[i];
                 if (items[i].indexOf('.') === 0 || !fs.lstatSync(path).isDirectory() || path.toLowerCase().indexOf(thisDir) !== -1 || path.endsWith('target') || path.endsWith('node_modules') || pathMatchesDirectoryToExclude(path)) {
                     continue;
-                }
-                !path.endsWith('/') && (path += '/');
+                }!path.endsWith('/') && (path += '/');
                 var hasPom = fs.existsSync(path + configuration.fileToStageName);
                 var hasGit = fs.existsSync(path + '.git/');
                 hasGit && await printGitCloneCommand(path);
@@ -211,8 +211,7 @@ function getProjectName(path) {
 async function performRelease(repository, repo) {
     if (!repo.pom) {
         return;
-    }
-    !fetch && repository && (await commitEdits(repository));
+    }!fetch && repository && (await commitEdits(repository));
     if (!fetch && repo.pom.indexOf('ossrh') !== -1) {
         var prepareTaskVersions = await getVersionsForPrepareTask(repo.path);
         console.log('Release task versions for: ' + JSON.stringify(prepareTaskVersions));
@@ -301,18 +300,14 @@ async function getDiffFiles(repository) {
 
 async function commitEdits(repository, tagVersion) {
     console.log("Committing edits in " + repository.referencingRepo.path);
-    var diffFiles = await getDiffFiles(repository);
-    if(!diffFiles || diffFiles.length === 0) {
-        console.log('No files to commit!');
-    }
-    var openIndex = await repository.refreshIndex();
-    diffFiles.map(async path => {
-        console.log('Adding ' + path);
-        await openIndex.addByPath(path);
+    await new Promise((ok, ko) => {
+        exec('git commit -a -m "' + configuration.pushMessage + (tagVersion || '') + '"', (err, stdout, stderr) => {
+            if (err) {
+                ko(err)
+            }
+            ok(stdout);
+        });
     });
-    await openIndex.write();
-    var oid = await openIndex.writeTree();
-    return await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [repository.referencingRepo.lastCommit]);
 }
 
 async function pushAllChanges(repository, tagVersion, repo, forceMode) {
