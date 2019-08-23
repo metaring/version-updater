@@ -300,28 +300,17 @@ async function getDiffFiles(repository) {
 
 async function commitEdits(repository, tagVersion, commit) {
     console.log("Committing edits in " + repository.referencingRepo.path);
-    var openIndex = await repository.refreshIndex();
     var diffs = await getDiffFiles(repository);
     if(!diffs || diffs.length === 0) {
         console.log('No files to commit!');
         return;
     }
-    diffs.map(async p => {
-        var path = './' + p;
-        console.log('Adding ' + path);
-        await openIndex.addByPath(path);
-    });
+    var openIndex = await repository.refreshIndex();
+    await openIndex.addAll(repository.referencingRepo.path);
     await openIndex.write();
-    var oid = await openIndex.writeTree();
-    commit && await commit.amend('HEAD', author, author, 'UTF-8', configuration.pushMessage + (tagVersion || ''), oid, null);
-    !commit && await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [repository.referencingRepo.lastCommit]);
-    var head = await git.Reference.nameToId(repository, 'HEAD');
-    var commit = await repository.getCommit(head);
-    diffs = await getDiffFiles(repository);
-    if(diffs && diffs.length > 0) {
-        console.log('Not all files are committed! Retrying');
-        return await commitEdits(repository, tagVersion, commit);
-    }
+    var oid = await openIndex.writeTreeTo(repository);
+    await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [await repository.getHeadCommit()]);
+    var commit = await repository.getHeadCommit();
     return commit;
 }
 
