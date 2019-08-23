@@ -306,7 +306,8 @@ async function commitEdits(repository, tagVersion) {
         console.log('No files to commit!');
         return;
     }
-    diffs.map(async path => {
+    diffs.map(async p => {
+        var path = './' + p;
         console.log('Adding ' + path);
         await openIndex.addByPath(path);
     });
