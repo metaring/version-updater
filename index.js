@@ -300,49 +300,31 @@ async function getDiffFiles(repository) {
 
 async function commitEdits(repository, tagVersion) {
     console.log("Committing edits in " + repository.referencingRepo.path);
-    await new Promise((ok, ko) => {
-        exec('git diff', (err, stdout, stderr) => {
-            if (err) {
-                ko(err)
-            }
-            console.log(stdout);
-            ok(stdout);
-        });
+    var openIndex = await repository.refreshIndex();
+    var diffs = await getDiffFiles(repository);
+    if(!diffs && diffs.length === 0) {
+        console.log('No files to commit!');
+        return;
+    }
+    diffs.map(async path => {
+        console.log('Adding ' + path);
+        await openIndex.addByPath(path);
     });
-    await new Promise((ok, ko) => {
-        exec('git add -A', (err, stdout, stderr) => {
-            if (err) {
-                ko(err)
-            }
-            console.log(stdout);
-            ok(stdout);
-        });
-    });
-    await new Promise((ok, ko) => {
-        exec('git commit --allow-empty -m "' + configuration.pushMessage + (tagVersion || '') + '"', (err, stdout, stderr) => {
-            if (err) {
-                ko(err)
-            }
-            console.log(stdout);
-            ok(stdout);
-        });
-    });
-    await new Promise((ok, ko) => {
-        exec('git diff', (err, stdout, stderr) => {
-            if (err) {
-                ko(err)
-            }
-            console.log(stdout);
-            ok(stdout);
-        });
-    });
+    await openIndex.write();
+    var oid = await openIndex.writeTree();
+    var head = await git.Reference.nameToId(repository, 'HEAD');
+    var parent = await repository.getCommit(head);
+    await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [parent]);
+    head = await git.Reference.nameToId(repository, 'HEAD');
+    return await repository.getCommit(head);
 }
 
 async function pushAllChanges(repository, tagVersion, repo, forceMode) {
     console.log("Pushing the new tag release " + tagVersion + " for repository " + repo.name);
-    await git.Reset.reset(repository, repo.lastCommit, git.Reset.TYPE.MIXED);
-    await commitEdits(repository, tagVersion);
-    await git.Tag.create(repository, tagVersion, await repository.getHeadCommit(), author, configuration.pushMessage + tagVersion, 1);
+    await repository.fetchAll(fetchOptions);
+    await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.MIXED);
+    var headCommit = await commitEdits(repository, tagVersion);
+    await git.Tag.create(repository, tagVersion, headCommit, author, configuration.pushMessage + tagVersion, 1);
     try {
         var remoteResult = await repository.getRemote('origin');
         await remoteResult.push([(forceMode === true ? '+' : '') + configuration.branchReferenceName, (force === true ? '+' : '') + configuration.tagReferenceName + tagVersion], fetchOptions);
