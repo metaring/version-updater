@@ -313,19 +313,13 @@ async function commitEdits(repository, tagVersion) {
     });
     await openIndex.write();
     var oid = await openIndex.writeTree();
-    var head = await git.Reference.nameToId(repository, 'HEAD');
-    var parent = await repository.getCommit(head);
-    await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [parent]);
+    await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [repository.referencingRepo.lastCommit]);
     diffs = await getDiffFiles(repository);
-    if(!diffs || diffs.length === 0) {
-        console.log('All files are commited!');
-        return;
+    if(diffs && diffs.length > 0) {
+        console.log('Not all files are committed! Doing again');
+        return await commitEdits(repository, tagVersion);
     }
-    diffs.map(async p => {
-        var path = './' + p;
-        console.log('Still to commit: ' + path);
-    });
-    head = await git.Reference.nameToId(repository, 'HEAD');
+    var head = await git.Reference.nameToId(repository, 'HEAD');
     return await repository.getCommit(head);
 }
 
