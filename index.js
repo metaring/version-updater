@@ -302,7 +302,7 @@ async function commitEdits(repository, tagVersion) {
     console.log("Committing edits in " + repository.referencingRepo.path);
     var openIndex = await repository.refreshIndex();
     var diffs = await getDiffFiles(repository);
-    if(!diffs && diffs.length === 0) {
+    if(!diffs || diffs.length === 0) {
         console.log('No files to commit!');
         return;
     }
@@ -316,6 +316,15 @@ async function commitEdits(repository, tagVersion) {
     var head = await git.Reference.nameToId(repository, 'HEAD');
     var parent = await repository.getCommit(head);
     await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [parent]);
+    diffs = await getDiffFiles(repository);
+    if(!diffs || diffs.length === 0) {
+        console.log('All files are commited!');
+        return;
+    }
+    diffs.map(async p => {
+        var path = './' + p;
+        console.log('Still to commit: ' + path);
+    });
     head = await git.Reference.nameToId(repository, 'HEAD');
     return await repository.getCommit(head);
 }
