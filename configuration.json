@@ -12,5 +12,6 @@
     "fileToStageName" : "pom.xml",
     "commitMessage": "[RELEASE]",
     "pushMessage": "Published ",
-    "directoriesToExclude": []
+    "directoriesToExclude": [],
+    "sleepTime": 10000
 }

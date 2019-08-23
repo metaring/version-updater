@@ -83,6 +83,7 @@ async function fetchAndUpdate(repos) {
             if (force || (await mustBeUpdated(repository, repo))) {
                 !force && !fetch && console.log("CHANGES DETECTED Performing release");
                 repo.pom = await performRelease(repository, repo);
+                await sleep(configuration.sleepTime);
             }
         } catch (e) {
             console.log(e);
@@ -328,5 +329,11 @@ async function pushAllChanges(repository, tagVersion, repo, forceMode) {
         forceMode === true && console.log(e);
         forceMode !== true && await pushAllChanges(repository, tagVersion, repo, true);
     }
+}
+
+async function sleep(ms) {
+    console.log('Sleeping for ' + ms + ' msec...');
+    await new Promise(ok => setTimeout(ok, ms));
+    console.log('Woke Up!');
 }
 main().catch(console.log);
