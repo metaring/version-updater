@@ -298,7 +298,7 @@ async function getDiffFiles(repository) {
     return patches.map(patch => patch.newFile().path());
 }
 
-async function commitEdits(repository, tagVersion) {
+async function commitEdits(repository, tagVersion, commit) {
     console.log("Committing edits in " + repository.referencingRepo.path);
     var openIndex = await repository.refreshIndex();
     var diffs = await getDiffFiles(repository);
@@ -313,15 +313,16 @@ async function commitEdits(repository, tagVersion) {
     });
     await openIndex.write();
     var oid = await openIndex.writeTree();
-    await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [repository.referencingRepo.lastCommit]);
+    commit && await commit.amend('HEAD', author, author, 'UTF-8', configuration.pushMessage + (tagVersion || ''), oid, null);
+    !commit && await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [repository.referencingRepo.lastCommit]);
+    var head = await git.Reference.nameToId(repository, 'HEAD');
+    var commit = await repository.getCommit(head);
     diffs = await getDiffFiles(repository);
     if(diffs && diffs.length > 0) {
         console.log('Not all files are committed! Retrying');
-        await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.MIXED);
-        return await commitEdits(repository, tagVersion);
+        return await commitEdits(repository, tagVersion, commit);
     }
-    var head = await git.Reference.nameToId(repository, 'HEAD');
-    return await repository.getCommit(head);
+    return commit;
 }
 
 async function pushAllChanges(repository, tagVersion, repo, forceMode) {
