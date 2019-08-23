@@ -301,7 +301,7 @@ async function getDiffFiles(repository) {
 async function commitEdits(repository, tagVersion) {
     console.log("Committing edits in " + repository.referencingRepo.path);
     await new Promise((ok, ko) => {
-        exec('git commit -a -m "' + configuration.pushMessage + (tagVersion || '') + '"', (err, stdout, stderr) => {
+        exec('git commit -a --allow-empty -m "' + configuration.pushMessage + (tagVersion || '') + '"', (err, stdout, stderr) => {
             if (err) {
                 ko(err)
             }
