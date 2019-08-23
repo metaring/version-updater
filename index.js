@@ -301,10 +301,38 @@ async function getDiffFiles(repository) {
 async function commitEdits(repository, tagVersion) {
     console.log("Committing edits in " + repository.referencingRepo.path);
     await new Promise((ok, ko) => {
-        exec('git commit -a --allow-empty -m "' + configuration.pushMessage + (tagVersion || '') + '"', (err, stdout, stderr) => {
+        exec('git diff', (err, stdout, stderr) => {
             if (err) {
                 ko(err)
             }
+            console.log(stdout);
+            ok(stdout);
+        });
+    });
+    await new Promise((ok, ko) => {
+        exec('git add -A', (err, stdout, stderr) => {
+            if (err) {
+                ko(err)
+            }
+            console.log(stdout);
+            ok(stdout);
+        });
+    });
+    await new Promise((ok, ko) => {
+        exec('git commit --allow-empty -m "' + configuration.pushMessage + (tagVersion || '') + '"', (err, stdout, stderr) => {
+            if (err) {
+                ko(err)
+            }
+            console.log(stdout);
+            ok(stdout);
+        });
+    });
+    await new Promise((ok, ko) => {
+        exec('git diff', (err, stdout, stderr) => {
+            if (err) {
+                ko(err)
+            }
+            console.log(stdout);
             ok(stdout);
         });
     });
