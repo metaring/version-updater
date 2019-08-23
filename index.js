@@ -304,7 +304,6 @@ async function commitEdits(repository, tagVersion) {
     var diffFiles = await getDiffFiles(repository);
     if(!diffFiles || diffFiles.length === 0) {
         console.log('No files to commit!');
-        return;
     }
     var openIndex = await repository.refreshIndex();
     diffFiles.map(async path => {
