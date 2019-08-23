@@ -298,7 +298,7 @@ async function getDiffFiles(repository) {
     return patches.map(patch => patch.newFile().path());
 }
 
-async function commitEdits(repository, tagVersion, commit) {
+async function commitEdits(repository, tagVersion) {
     console.log("Committing edits in " + repository.referencingRepo.path);
     var diffs = await getDiffFiles(repository);
     if(!diffs || diffs.length === 0) {
@@ -306,7 +306,7 @@ async function commitEdits(repository, tagVersion, commit) {
         return;
     }
     var openIndex = await repository.refreshIndex();
-    await openIndex.addAll(repository.referencingRepo.path);
+    await openIndex.addAll();
     await openIndex.write();
     var oid = await openIndex.writeTreeTo(repository);
     await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [await repository.getHeadCommit()]);
