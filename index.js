@@ -83,7 +83,7 @@ async function fetchAndUpdate(repos) {
             if (force || (await mustBeUpdated(repository, repo))) {
                 !force && !fetch && console.log("CHANGES DETECTED Performing release");
                 repo.pom = await performRelease(repository, repo);
-                await sleep(configuration.sleepTime);
+                !fetch && await sleep(configuration.sleepTime);
             }
         } catch (e) {
             console.log(e);
