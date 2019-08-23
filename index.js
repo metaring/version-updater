@@ -316,7 +316,8 @@ async function commitEdits(repository, tagVersion) {
     await repository.createCommit('HEAD', author, author, configuration.pushMessage + (tagVersion || ''), oid, [repository.referencingRepo.lastCommit]);
     diffs = await getDiffFiles(repository);
     if(diffs && diffs.length > 0) {
-        console.log('Not all files are committed! Doing again');
+        console.log('Not all files are committed! Retrying');
+        await git.Reset.reset(repository, await repository.getBranchCommit(configuration.originBranchName), git.Reset.TYPE.MIXED);
         return await commitEdits(repository, tagVersion);
     }
     var head = await git.Reference.nameToId(repository, 'HEAD');
