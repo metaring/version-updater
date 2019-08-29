@@ -13,5 +13,6 @@
     "commitMessage": "[RELEASE]",
     "pushMessage": "Published ",
     "directoriesToExclude": [],
-    "sleepTime": 50000
+    "sleepTime": 50000,
+    "mavenLogFileLocation" : null
 }

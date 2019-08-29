@@ -41,6 +41,15 @@ console.log("Project local path is: %s", localPath);
 
 const pomVersionParser = new xml2js.Parser({ attrkey: "version" });
 
+var mavenLogPath = null;
+try {
+    configuration.mavenLogFileLocation = configuration.mavenLogFileLocation.split(' ').join('').split('\\').join('/');
+    !configuration.mavenLogFileLocation.endsWith('/') && (configuration.mavenLogFileLocation += '/');
+    var files = fs.readdirSync(configuration.mavenLogFileLocation);
+    mavenLogPath = configuration.mavenLogFileLocation + files[files.length - 1];
+    console.log('Log file is: ' + mavenLogPath);
+}
+
 var fetchOptions = {
     callbacks: {
         certificateCheck() {
@@ -231,6 +240,7 @@ async function executeMaven(repository, task, prepareTaskVersions) {
     var parameters = {
         skipTests: true
     };
+    mavenLogPath && (parameters.logFile = mavenLogPath);
     prepareTaskVersions && Object.keys(prepareTaskVersions).map(key => parameters[key] = prepareTaskVersions[key]);
     console.log("Running Maven %s task for %s", task, repository);
     await mvn.execute([task], parameters);
