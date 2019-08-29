@@ -286,6 +286,7 @@ async function resetRepo(repository) {
 async function pullAllChanges(repository, repo) {
     await resetRepo(repository);
     if (repo.pom) {
+        await executeMaven(repo.path, 'clean');
         await executeMaven(repo.path, 'versions:use-releases');
         await executeMaven(repo.path, 'versions:use-latest-releases');
     }
