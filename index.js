@@ -13,10 +13,6 @@
  *    See the License for the specific language governing permissions and
  *    limitations under the License.
  */
-
-var force = false;
-process.argv.forEach(it => it === '--force' && (force = true));
-
 var fetch = false;
 process.argv.forEach(it => it === '--fetch' && (fetch = true));
 
@@ -25,7 +21,8 @@ const fs = require("fs"),
     maven = require("maven"),
     xml2js = require('xml2js'),
     Enumerable = require('linq'),
-    configuration = require('./configuration');
+    configuration = require('./configuration'),
+    http = require('http');
 exec = require('child_process').exec;
 
 var directoriesToExclude = configuration.directoriesToExclude || [];
@@ -48,7 +45,7 @@ try {
     var files = fs.readdirSync(configuration.mavenLogFileLocation);
     mavenLogPath = configuration.mavenLogFileLocation + files[files.length - 1];
     console.log('Log file is: ' + mavenLogPath);
-}
+} catch (e) {}
 
 var fetchOptions = {
     callbacks: {
@@ -68,7 +65,6 @@ const author = git.Signature.now(configuration.authorName, configuration.authorE
  * Main functionality
  */
 async function main() {
-    force && console.log("==== FORCE MODE ===");
     fetch && console.log("==== FETCH MODE ===");
     await fetchAndUpdate(await getMavenRepos());
     console.log("Maven repo sync end. Bye!");
@@ -89,8 +85,8 @@ async function fetchAndUpdate(repos) {
             var oldVersion = repo.pom ? await getPOMVersion(repo.path) : undefined;
             await pullAllChanges(repository, repo);
             oldVersion && console.log('POM Versions: ' + oldVersion + ' -> ' + (await getPOMVersion(repo.path)));
-            if (force || (await mustBeUpdated(repository, repo))) {
-                !force && !fetch && console.log("CHANGES DETECTED Performing release");
+            if (await mustBeUpdated(repository, repo)) {
+                !fetch && console.log("CHANGES DETECTED Performing release");
                 repo.pom = await performRelease(repository, repo);
                 !fetch && await sleep(configuration.sleepTime);
             }
@@ -123,7 +119,8 @@ function getMavenRepos(currentPath) {
                 var path = currentPath + items[i];
                 if (items[i].indexOf('.') === 0 || !fs.lstatSync(path).isDirectory() || path.toLowerCase().indexOf(thisDir) !== -1 || path.endsWith('target') || path.endsWith('node_modules') || pathMatchesDirectoryToExclude(path)) {
                     continue;
-                }!path.endsWith('/') && (path += '/');
+                }
+                !path.endsWith('/') && (path += '/');
                 var hasPom = fs.existsSync(path + configuration.fileToStageName);
                 var hasGit = fs.existsSync(path + '.git/');
                 hasGit && await printGitCloneCommand(path);
@@ -205,7 +202,7 @@ function getPOMVersion(path) {
     });
 }
 
-function getProjectName(path) {
+function getProjectName(path, forURL) {
     !path.endsWith('/') && (path += '/');
     return new Promise(function(ok, ko) {
         pomVersionParser.parseString(fs.readFileSync(path + configuration.fileToStageName, configuration.encoding), function(error, pom) {
@@ -213,7 +210,11 @@ function getProjectName(path) {
                 ko(error);
                 return;
             }
-            ok(pom.project.groupId[pom.project.groupId.length - 1] + "." + pom.project.artifactId[pom.project.artifactId.length - 1]);
+            var groupId = pom.project.groupId[pom.project.groupId.length - 1];
+            forURL === true && (groupId = groupId.split('.').join('/'))
+            var artifactId = pom.project.artifactId[pom.project.artifactId.length - 1];
+            var separator = forURL === true ? "/" : "."
+            ok(groupId + separator + artifactId);
         });
     });
 }
@@ -246,32 +247,61 @@ async function executeMaven(repository, task, prepareTaskVersions) {
     await mvn.execute([task], parameters);
 }
 
-function checkAndIncrementVersions(version, toCheck, toIncrement, inc) {
+function checkAndIncrementVersions(version, toCheck, toIncrement) {
     if (version[toCheck] > 9) {
-        version[toCheck] = inc && inc > 0 ? inc - 1 : 0;
+        version[toCheck] = 0;
         version[toIncrement] += 1;
     }
     return version;
 }
 
-async function getVersionsForPrepareTask(path) {
-    var inc = force ? 2 : 0;
-    var oldVersion = await getPOMVersion(path);
+async function getRemotePOMVersion(path) {
+    if (!configuration.mavenCentraURLPath) {
+        return await getPOMVersion(path);
+    }
+    var url = configuration.mavenCentraURLPath.split('{projectName}').join(await getProjectName(path, true));
+    return new Promise((ok, ko) => {
+        http.get(url, (resp) => {
+            var data = '';
+
+            resp.on('data', (chunk) => {
+                data += chunk;
+            });
+
+            resp.on('end', () => {
+                pomVersionParser.parseString(data, function(error, result) {
+                    if (error) {
+                        ko(error);
+                        return;
+                    }
+                    var oldVersion = result.metadata.versioning[0].release[0];
+                    var releaseVersion = increaseVersion(oldVersion).version.join('.');
+                    ok(releaseVersion);
+                });
+            });
+        });
+    });
+}
+
+function increaseVersion(oldVersion) {
     var releaseVersion = oldVersion.split('-SNAPSHOT').join('').split('-RELEASE').join();
     var version = releaseVersion.split('.');
     version[0] = parseInt(version[0]);
     version[1] = parseInt(version[1]);
-    version[2] = parseInt(version[2]) + (inc + 1);
-    version = checkAndIncrementVersions(version, 2, 1, inc);
-    version = checkAndIncrementVersions(version, 1, 0, 0);
-
-    if (force) {
-        releaseVersion = version[0] + '.' + version[1] + '.' + version[2];
-        version[2] = parseInt(version[2]) + 1;
-        version = checkAndIncrementVersions(version, 2, 1);
-        version = checkAndIncrementVersions(version, 1, 0);
+    version[2] = parseInt(version[2]) + 1;
+    version = checkAndIncrementVersions(version, 2, 1);
+    version = checkAndIncrementVersions(version, 1, 0);
+    return {
+        releaseVersion,
+        version
     }
+}
 
+async function getVersionsForPrepareTask(path) {
+    var oldVersion = await getRemotePOMVersion(path);
+    var versionData = increaseVersion(oldVersion);
+    var releaseVersion = versionData.releaseVersion;
+    var version = versionData.version;
     var tag = 'v' + releaseVersion;
     var developmentVersion = version[0] + '.' + version[1] + '.' + version[2] + '-SNAPSHOT';
     return {
@@ -313,7 +343,7 @@ async function getDiffFiles(repository) {
 async function commitEdits(repository, tagVersion) {
     console.log("Committing edits in " + repository.referencingRepo.path);
     var diffs = await getDiffFiles(repository);
-    if(!diffs || diffs.length === 0) {
+    if (!diffs || diffs.length === 0) {
         console.log('No files to commit!');
         return;
     }
@@ -334,7 +364,7 @@ async function pushAllChanges(repository, tagVersion, repo, forceMode) {
     await git.Tag.create(repository, tagVersion, headCommit, author, configuration.pushMessage + tagVersion, 1);
     try {
         var remoteResult = await repository.getRemote('origin');
-        await remoteResult.push([(forceMode === true ? '+' : '') + configuration.branchReferenceName, (force === true ? '+' : '') + configuration.tagReferenceName + tagVersion], fetchOptions);
+        await remoteResult.push([(forceMode === true ? '+' : '') + configuration.branchReferenceName, (forceMode === true ? '+' : '') + configuration.tagReferenceName + tagVersion], fetchOptions);
     } catch (e) {
         forceMode !== true && console.log('Push failed, trying again in force mode...');
         forceMode === true && console.log(e);

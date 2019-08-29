@@ -14,5 +14,6 @@
     "pushMessage": "Published ",
     "directoriesToExclude": [],
     "sleepTime": 50000,
-    "mavenLogFileLocation" : null
+    "mavenLogFileLocation" : null,
+    "mavenCentraURLPath" : "http://central.maven.org/maven2/{projectName}/maven-metadata.xml"
 }
