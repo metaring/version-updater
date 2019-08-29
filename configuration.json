@@ -13,5 +13,5 @@
     "commitMessage": "[RELEASE]",
     "pushMessage": "Published ",
     "directoriesToExclude": [],
-    "sleepTime": 25000
+    "sleepTime": 50000
 }
