@@ -16,6 +16,10 @@
 var fetch = false;
 process.argv.forEach(it => it === '--fetch' && (fetch = true));
 
+var align = false;
+process.argv.forEach(it => it === '--align' && (align = true));
+var nextForcedVersion = null;
+
 const fs = require("fs"),
     git = require("nodegit"),
     maven = require("maven"),
@@ -43,8 +47,12 @@ try {
     configuration.mavenLogFileLocation = configuration.mavenLogFileLocation.split(' ').join('').split('\\').join('/');
     !configuration.mavenLogFileLocation.endsWith('/') && (configuration.mavenLogFileLocation += '/');
     var files = fs.readdirSync(configuration.mavenLogFileLocation);
-    mavenLogPath = configuration.mavenLogFileLocation + files[files.length - 1];
-    console.log('Log file is: ' + mavenLogPath);
+    var logFile = 'version_updater.log'
+    if(files && files.length > 0) {
+        logFile = files[files.length - 1];
+    }
+    mavenLogPath = configuration.mavenLogFileLocation + logFile;
+    console.log('Maven log file is: ' + mavenLogPath);
 } catch (e) {}
 
 var fetchOptions = {
@@ -66,13 +74,17 @@ const author = git.Signature.now(configuration.authorName, configuration.authorE
  */
 async function main() {
     fetch && console.log("==== FETCH MODE ===");
+    align && console.log("==== ALIGN MODE ===");
     await fetchAndUpdate(await getMavenRepos());
     console.log("Maven repo sync end. Bye!");
     process.exit(0);
 }
 
 async function fetchAndUpdate(repos) {
-    var repos = Enumerable.from(repos).orderBy(it => it.path).toArray();
+    var repos = Enumerable.from(repos);
+    nextForcedVersion = !align ? null : repos.orderByDescending(it => it.nextReleaseVersion).first().nextReleaseVersion; 
+    nextForcedVersion && console.log('All repos will be updated to version ' + nextForcedVersion);
+    var repos = repos.orderBy(it => it.path).toArray();
     repos && repos.length > 0 && console.log('\n');
     var updatedRepos = [];
     for (var i in repos) {
@@ -85,8 +97,8 @@ async function fetchAndUpdate(repos) {
             var oldVersion = repo.pom ? await getPOMVersion(repo.path) : undefined;
             await pullAllChanges(repository, repo);
             oldVersion && console.log('POM Versions: ' + oldVersion + ' -> ' + (await getPOMVersion(repo.path)));
-            if (await mustBeUpdated(repository, repo)) {
-                !fetch && console.log("CHANGES DETECTED Performing release");
+            if (align || await mustBeUpdated(repository, repo)) {
+                !fetch && !align && console.log("CHANGES DETECTED Performing release");
                 repo.pom = await performRelease(repository, repo);
                 !fetch && await sleep(configuration.sleepTime);
             }
@@ -129,7 +141,8 @@ function getMavenRepos(currentPath) {
                         path,
                         pom: hasPom && fs.readFileSync(path + configuration.fileToStageName, configuration.encoding),
                         lastCommitDate: hasGit && await getLastCommitDate(path),
-                        name: hasPom ? await getProjectName(path) : path
+                        name: hasPom ? await getProjectName(path) : path,
+                        nextReleaseVersion : hasPom && align ? await getRemotePOMVersion(path) : null
                     });
                     try {
                         fs.unlinkSync(path + configuration.fileToStageName + '.versionsBackup');
@@ -298,7 +311,7 @@ function increaseVersion(oldVersion) {
 }
 
 async function getVersionsForPrepareTask(path) {
-    var oldVersion = await getRemotePOMVersion(path);
+    var oldVersion = nextForcedVersion || await getRemotePOMVersion(path);
     var versionData = increaseVersion(oldVersion);
     var releaseVersion = versionData.releaseVersion;
     var version = versionData.version;
