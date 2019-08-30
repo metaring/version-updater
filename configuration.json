@@ -13,7 +13,7 @@
     "commitMessage": "[RELEASE]",
     "pushMessage": "Published ",
     "directoriesToExclude": [],
-    "sleepTime": 25000,
+    "sleepTime": 30000,
     "mavenLogFileLocation" : null,
     "mavenCentraURLPath" : "http://central.maven.org/maven2/{projectName}/maven-metadata.xml"
 }

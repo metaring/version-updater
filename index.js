@@ -91,6 +91,7 @@ async function fetchAndUpdate(repos) {
         var repo = repos[i];
         console.log('==> ' + repo.name + ' START <==');
         var repository = null;
+        var shutdown = false;
         try {
             repository = repo.lastCommitDate ? (await git.Repository.open(repo.path)) : undefined;
             repository && (repository.referencingRepo = repo);
@@ -103,6 +104,7 @@ async function fetchAndUpdate(repos) {
                 !fetch && await sleep(configuration.sleepTime);
             }
         } catch (e) {
+            shutdown = true;
             console.log(e);
             console.log('Resetting repo');
             try {
@@ -113,6 +115,8 @@ async function fetchAndUpdate(repos) {
             }
         }
         console.log('==> ' + repo.name + ' END <==\n\n');
+        shutdown && console.log('### PERFORM CAUTELATIVE SHUTDOWN ###');
+        shutdown && process.exit(0);
     }
     return updatedRepos;
 }
