@@ -26,7 +26,7 @@ const fs = require("fs"),
     xml2js = require('xml2js'),
     Enumerable = require('linq'),
     configuration = require('./configuration'),
-    http = require('http');
+    remoteConnection = require('http' + (configuration.mavenCentraURLPath.indexOf('https') !== -1 ? 's' : ''));
 exec = require('child_process').exec;
 
 var directoriesToExclude = configuration.directoriesToExclude || [];
@@ -278,7 +278,7 @@ async function getRemotePOMVersion(path) {
     }
     var url = configuration.mavenCentraURLPath.split('{projectName}').join(await getProjectName(path, true));
     return new Promise((ok, ko) => {
-        http.get(url, (resp) => {
+        remoteConnection.get(url, (resp) => {
             var data = '';
 
             resp.on('data', (chunk) => {
