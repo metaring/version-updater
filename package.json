@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "align": "node index.js --align",
-    "fetch": "node index.js --fetch"
+    "fetch": "node index.js --fetch",
+    "install": "node index.js --install"
   },
   "keywords": [
     "metaring",

@@ -18,6 +18,10 @@ process.argv.forEach(it => it === '--fetch' && (fetch = true));
 
 var align = false;
 process.argv.forEach(it => it === '--align' && (align = true));
+
+var install = false;
+process.argv.forEach(it => it === '--install' && (install = true));
+
 var nextForcedVersion = null;
 
 const fs = require("fs"),
@@ -75,6 +79,7 @@ const author = git.Signature.now(configuration.authorName, configuration.authorE
 async function main() {
     fetch && console.log("==== FETCH MODE ===");
     align && console.log("==== ALIGN MODE ===");
+    install && console.log("==== INSTALL MODE ===");
     await fetchAndUpdate(await getMavenRepos());
     console.log("Maven repo sync end. Bye!");
     process.exit(0);
@@ -96,13 +101,14 @@ async function fetchAndUpdate(repos) {
             repository = repo.lastCommitDate ? (await git.Repository.open(repo.path)) : undefined;
             repository && (repository.referencingRepo = repo);
             var oldVersion = repo.pom ? await getPOMVersion(repo.path) : undefined;
-            await pullAllChanges(repository, repo);
+            !install && await pullAllChanges(repository, repo);
             oldVersion && console.log('POM Versions: ' + oldVersion + ' -> ' + (await getPOMVersion(repo.path)));
-            if (align || await mustBeUpdated(repository, repo)) {
+            if (!install && (align || await mustBeUpdated(repository, repo))) {
                 !fetch && !align && console.log("CHANGES DETECTED Performing release");
                 repo.pom = await performRelease(repository, repo);
                 !fetch && await sleep(configuration.sleepTime);
             }
+            install && await installRepo(repo);
         } catch (e) {
             shutdown = true;
             console.log(e);
@@ -346,6 +352,13 @@ async function pullAllChanges(repository, repo) {
         await executeMaven(repo.path, 'clean');
         await executeMaven(repo.path, 'versions:use-releases');
         await executeMaven(repo.path, 'versions:use-latest-releases');
+    }
+}
+
+async function installRepo(repo) {
+    if (repo.pom) {
+        await executeMaven(repo.path, 'clean');
+        await executeMaven(repo.path, 'install');
     }
 }
 
