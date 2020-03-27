@@ -2,6 +2,7 @@
     "publicKeyLocation" : "your_pubkey_location_here",
     "privateKeyLocation" : "your_privkey_location_here",
     "reposLocation" : "your_repos_location_here",
+    "m2LocationPath" : "your_m2_location_here",
     "authorName": "MetaRing DevOps Bot",
     "authorEmail": "bot@metaring.com",
     "encoding": "UTF-8",

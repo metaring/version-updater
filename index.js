@@ -217,8 +217,7 @@ function getPOMVersion(path) {
     return new Promise(function(ok, ko) {
         pomVersionParser.parseString(fs.readFileSync(path + configuration.fileToStageName, configuration.encoding), function(error, pom) {
             if (error) {
-                ko(error);
-                return;
+                return ko(error);
             }
             ok(pom.project.version[pom.project.version.length - 1]);
         });
@@ -357,6 +356,12 @@ async function pullAllChanges(repository, repo) {
 
 async function installRepo(repo) {
     if (repo.pom) {
+        var projectName = await getProjectName(repo.path, true);
+        var pom = await getPOMVersion(repo.path);
+        var path = configuration.m2LocationPath.split('\\').join('/');
+        !path.endsWith('/') && (path += "/");
+        path += projectName + "/" + pom;
+        await deleteFolderRecursive(path);
         await executeMaven(repo.path, 'clean');
         await executeMaven(repo.path, 'install');
     }
@@ -407,4 +412,38 @@ async function sleep(ms) {
     await new Promise(ok => setTimeout(ok, ms));
     console.log('Woke Up!');
 }
+
+const deleteFolderRecursive = async function (path, mustBeEmpty) {
+    var remove = false;
+    if (fs.existsSync(path)) {
+        remove = true;
+        for (let entry of fs.readdirSync(path)) {
+            const curPath = path + "/" + entry;
+            if ((fs.lstatSync(curPath)).isDirectory()) {
+                if (!await deleteFolderRecursive(curPath, mustBeEmpty)) {
+                    remove = false;
+                }
+            } else {
+                if (mustBeEmpty !== true) {
+                    try {
+                        fs.unlinkSync(curPath);
+                    } catch (e) {
+                        (e.message || e).toString().indexOf('no such file or directory') === -1 && console.error(e);
+                    }
+                } else {
+                    remove = false;
+                }
+            }
+        }
+        if (remove) {
+            try {
+                fs.rmdirSync(path);
+            } catch (e) {
+                (e.message || e).toString().indexOf('no such file or directory') === -1 && console.error(e);
+            }
+        }
+    }
+    return remove;
+};
+
 main().catch(console.log);
