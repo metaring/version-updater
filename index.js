@@ -19,9 +19,6 @@ process.argv.forEach(it => it === '--fetch' && (fetch = true));
 var align = false;
 process.argv.forEach(it => it === '--align' && (align = true));
 
-var install = false;
-process.argv.forEach(it => it === '--install' && (install = true));
-
 var nextForcedVersion = null;
 
 const fs = require("fs"),
@@ -79,7 +76,6 @@ const author = git.Signature.now(configuration.authorName, configuration.authorE
 async function main() {
     fetch && console.log("==== FETCH MODE ===");
     align && console.log("==== ALIGN MODE ===");
-    install && console.log("==== INSTALL MODE ===");
     await fetchAndUpdate(await getMavenRepos());
     console.log("Maven repo sync end. Bye!");
     process.exit(0);
@@ -101,14 +97,13 @@ async function fetchAndUpdate(repos) {
             repository = repo.lastCommitDate ? (await git.Repository.open(repo.path)) : undefined;
             repository && (repository.referencingRepo = repo);
             var oldVersion = repo.pom ? await getPOMVersion(repo.path) : undefined;
-            !install && await pullAllChanges(repository, repo);
+            await pullAllChanges(repository, repo);
             oldVersion && console.log('POM Versions: ' + oldVersion + ' -> ' + (await getPOMVersion(repo.path)));
-            if (!install && (align || await mustBeUpdated(repository, repo))) {
+            if (align || await mustBeUpdated(repository, repo)) {
                 !fetch && !align && console.log("CHANGES DETECTED Performing release");
                 repo.pom = await performRelease(repository, repo);
                 !fetch && await sleep(configuration.sleepTime);
             }
-            install && await installRepo(repo);
         } catch (e) {
             shutdown = true;
             console.log(e);
@@ -265,8 +260,8 @@ async function executeMaven(repository, task, prepareTaskVersions) {
     };
     mavenLogPath && (parameters.logFile = mavenLogPath);
     prepareTaskVersions && Object.keys(prepareTaskVersions).map(key => parameters[key] = prepareTaskVersions[key]);
-    console.log("Running Maven %s task for %s", task, repository);
-    await mvn.execute([task], parameters);
+    console.log("Running Maven %s task for %s", JSON.stringify(task), repository);
+    await mvn.execute((typeof task).toLowerCase() === 'string' ? [task] : task, parameters);
 }
 
 function checkAndIncrementVersions(version, toCheck, toIncrement) {
@@ -351,19 +346,6 @@ async function pullAllChanges(repository, repo) {
         await executeMaven(repo.path, 'clean');
         await executeMaven(repo.path, 'versions:use-releases');
         await executeMaven(repo.path, 'versions:use-latest-releases');
-    }
-}
-
-async function installRepo(repo) {
-    if (repo.pom) {
-        var projectName = await getProjectName(repo.path, true);
-        var pom = await getPOMVersion(repo.path);
-        var path = configuration.m2LocationPath.split('\\').join('/');
-        !path.endsWith('/') && (path += "/");
-        path += projectName + "/" + pom;
-        await deleteFolderRecursive(path);
-        await executeMaven(repo.path, 'clean');
-        await executeMaven(repo.path, 'install');
     }
 }
 
